@@ -11,9 +11,10 @@ Basically, rtmlib only requires these dependencies:
 - opencv-contrib-python
 - onnxruntime
 
-Optionally, you can use other common backends like opencv, onnxruntime, openvino, tensorrt to accelerate the inference process.
+Optionally, you can use other common backends like opencv, onnxruntime, openvino to accelerate the inference process.
 
 - For openvino users, please add the path `<your python path>\envs\<your env name>\Lib\site-packages\openvino\libs` into your environment path.
+- For TensorRT, there's no generic `backend='tensorrt'` (engines are hardware/version-specific and built ahead of time, unlike the other backends' onnx-at-construction-time model) — see [`RTMOTensorRT`](/rtmlib/tools/pose_estimation/rtmo_tensorrt.py) for a dedicated RTMO-on-TensorRT class (`pip install tensorrt cuda-python`).
 
 ## Contents
 
@@ -171,6 +172,7 @@ python webui.py
     - RTMW for 133 keypoints
     - DWPose for 133 keypoints
     - RTMW3D for 133 keypoints (**3D**)
+  - [RTMOTensorRT](/rtmlib/tools/pose_estimation/rtmo_tensorrt.py) — RTMO for 17 keypoints on a prebuilt TensorRT engine instead of opencv/onnxruntime/openvino (optional deps: `pip install tensorrt cuda-python`; not imported by `import rtmlib`)
   - [ViTPose](/rtmlib/tools/pose_estimation/vitpose.py)
     - ViTPose for 17 keypoints
     - ViTPose for 17 keypoints (**animal**)
