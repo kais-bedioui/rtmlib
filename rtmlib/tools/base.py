@@ -94,6 +94,17 @@ class BaseTool(metaclass=ABCMeta):
             ov_device = RTMLIB_SETTINGS['openvino'].get(
                 device, device.upper())
 
+            if ov_device.upper().startswith('NPU'):
+                # Unlike the CPU/GPU plugins, OpenVINO's NPU plugin requires
+                # a fully static input shape and fails to compile models
+                # whose ONNX export declares a dynamic/unbounded batch
+                # dimension (`Upper bounds are not specified for node ...`).
+                # rtmlib always calls these models with batch size 1 (see
+                # `inference()` below), so pin the batch dim to 1 for NPU.
+                input_port = model_onnx.input(0)
+                h, w = model_input_size[1], model_input_size[0]
+                model_onnx.reshape({input_port.any_name: [1, 3, h, w]})
+
             self.compiled_model = core.compile_model(
                 model=model_onnx,
                 device_name=ov_device,

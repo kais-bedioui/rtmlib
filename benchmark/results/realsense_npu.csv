@@ -1,0 +1,4 @@
+tag,video,src_resolution,bench_resolution,src_fps,pipeline,backend,device,det_ms,pose_ms,total_ms,fps,avg_persons,status,error
+realsense_live,D435I_color_live,1920x1080,1920x1080,30,lightweight (YOLOX-tiny + RTMPose-s),openvino,npu,72.76,4.10,76.87,13.01,1.07,ok,
+realsense_live,D435I_color_live,1920x1080,1920x1080,30,balanced (YOLOX-m + RTMPose-m),openvino,npu,171.45,5.17,176.62,5.66,1.00,ok,
+realsense_live,D435I_color_live,1920x1080,1920x1080,30,"rtmo-balanced (RTMO-m, one-stage)",openvino,npu,0.00,86.77,86.77,11.52,1.00,ok,
