@@ -21,7 +21,8 @@ pre-sized buffer -- is required for these two outputs; a static
 rtmlib models) silently reads garbage or crashes for RTMO's outputs.
 """
 import os
-from typing import Dict, List, Tuple
+import warnings
+from typing import Dict, List, Sequence, Tuple
 
 import numpy as np
 
@@ -57,6 +58,7 @@ def build_engine(onnx_path: str,
                  engine_path: str,
                  input_shape: Tuple[int, int, int, int] = (1, 3, 640, 640),
                  workspace_mb: int = 2048,
+                 fp16: bool = False,
                  force: bool = False) -> str:
     """Build (or reuse a cached) TensorRT engine from an ONNX model with a
     fixed input shape, using TensorRT's Python builder API directly --
@@ -75,6 +77,27 @@ def build_engine(onnx_path: str,
             exists, it's reused as-is (pass `force=True` to rebuild).
         input_shape: Fixed (N, C, H, W) input shape to build for.
         workspace_mb: TensorRT builder workspace size limit, in MiB.
+        fp16: Request the classic `BuilderFlag.FP16` precision. Silently
+            (with a `warnings.warn`) downgraded to FP32 on TensorRT
+            builds that don't expose that flag -- **TensorRT 11 dropped
+            it** in favor of "strongly typed" networks that match the
+            ONNX's own tensor dtypes; Roboflow's `rfdetr` package hits
+            this exact issue and falls back the same way (see
+            `rfdetr.export._tensorrt.build_engine` for the same probe-
+            and-fall-back pattern independently arrived at there). On a
+            TensorRT build old enough to still have the flag (e.g.
+            TensorRT 10.x, as JetPack 7.2 ships), this Just Works and is
+            a real, no-caveats speedup -- confirmed via `trtexec` on a
+            Jetson AGX Orin: RTMO-m went from 70.2 to 123.0 qps.
+            See `build_engine_strongly_typed_fp16` for the TensorRT-11+
+            alternative -- it's real (builds a genuine mixed-precision
+            engine, correct output), but empirically gave *zero*
+            measured speedup on an Ada Lovelace GPU + TensorRT 11.3
+            (RTMO's Conv layers -- most of its FLOPs -- have no
+            low-precision kernel for a strongly typed network there, so
+            they end up staying FP32 anyway). It's opt-in, not the
+            `fp16=True` default here, because of that: verify it
+            actually helps on your own hardware before relying on it.
         force: Rebuild even if `engine_path` already exists.
 
     Returns:
@@ -98,6 +121,19 @@ def build_engine(onnx_path: str,
     config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE,
                                  workspace_mb * 1024 * 1024)
 
+    if fp16:
+        if hasattr(trt.BuilderFlag, 'FP16'):
+            config.set_flag(trt.BuilderFlag.FP16)
+        else:
+            warnings.warn(
+                f'TensorRT {getattr(trt, "__version__", "?")} has no '
+                "BuilderFlag.FP16 (removed in TensorRT 11+ -- see "
+                'build_engine()\'s fp16 docstring). Building FP32 '
+                'instead. Pass fp16=False to silence this warning, or '
+                'see build_engine_strongly_typed_fp16 for the (opt-in, '
+                'not always faster) TensorRT-11+ alternative.',
+                stacklevel=2)
+
     profile = builder.create_optimization_profile()
     input_name = network.get_input(0).name
     profile.set_shape(input_name, input_shape, input_shape, input_shape)
@@ -106,6 +142,99 @@ def build_engine(onnx_path: str,
     serialized = builder.build_serialized_network(network, config)
     if serialized is None:
         raise RuntimeError(f'TensorRT engine build failed for {onnx_path}')
+
+    out_dir = os.path.dirname(os.path.abspath(engine_path))
+    os.makedirs(out_dir, exist_ok=True)
+    with open(engine_path, 'wb') as f:
+        f.write(serialized)
+    return engine_path
+
+
+def build_engine_strongly_typed_fp16(
+    onnx_path: str,
+    engine_path: str,
+    input_shape: Tuple[int, int, int, int] = (1, 3, 640, 640),
+    workspace_mb: int = 2048,
+    op_block_list: Sequence[str] = ('Conv', 'ConvTranspose',
+                                    'NonMaxSuppression'),
+    force: bool = False,
+) -> str:
+    """Opt-in alternative to `build_engine(..., fp16=True)` for TensorRT
+    builds without `BuilderFlag.FP16` (TensorRT 11+, see that function's
+    docstring) -- builds a genuine mixed FP16/FP32 engine by casting the
+    ONNX to FP16 first (keeping `op_block_list` in FP32) and compiling it
+    as a "strongly typed" network, which respects the ONNX's own tensor
+    dtypes instead of a global precision flag.
+
+    This *works* (produces a correct, running engine -- verified on
+    RTMO-m: same person count and near-identical keypoints as the FP32
+    engine, off by sub-pixel amounts) but is not necessarily *faster*:
+    on an Ada Lovelace GPU + TensorRT 11.3, it measured within noise of
+    the plain FP32 engine (73.4 vs 70.2 qps) because TensorRT reported
+    "No low-precision conv kernel available for this strongly-typed
+    Conv/ConvTranspose" and forced RTMO's Conv layers -- the majority of
+    its FLOPs -- back to FP32 regardless, which is exactly why `Conv`
+    and `ConvTranspose` are in the default `op_block_list`: leaving them
+    out doesn't buy real FP16 Conv execution here, just build failures.
+    `NonMaxSuppression` is blocked because its `IoUThreshold` input is
+    required by the ONNX op spec to stay float32 -- RTMO's graph
+    contains a real NMS node internally, not just Python-side NMS.
+
+    Requires `onnx` and `onnxconverter-common` (not rtmlib or
+    RTMOTensorRT dependencies -- install separately if you want to try
+    this path: `pip install onnx onnxconverter-common`).
+
+    Whether this is worth using depends entirely on your own GPU's
+    kernel support for low-precision strongly-typed Conv -- benchmark it
+    against `build_engine(..., fp16=False)` before relying on it.
+    """
+    if os.path.exists(engine_path) and not force:
+        return engine_path
+
+    try:
+        import onnx
+        from onnxconverter_common import float16
+    except ImportError as e:
+        raise ImportError(
+            'build_engine_strongly_typed_fp16 requires the onnx and '
+            'onnxconverter-common packages: pip install onnx '
+            'onnxconverter-common') from e
+
+    fp16_onnx_path = os.path.splitext(engine_path)[0] + '_fp16_cast.onnx'
+    model_fp16 = float16.convert_float_to_float16(
+        onnx.load(onnx_path), keep_io_types=False,
+        op_block_list=list(op_block_list))
+    onnx.save(model_fp16, fp16_onnx_path)
+
+    logger = trt.Logger(trt.Logger.WARNING)
+    builder = trt.Builder(logger)
+    network = builder.create_network(
+        1 << int(trt.NetworkDefinitionCreationFlag.STRONGLY_TYPED))
+    parser = trt.OnnxParser(network, logger)
+
+    with open(fp16_onnx_path, 'rb') as f:
+        if not parser.parse(f.read()):
+            errors = '\n'.join(
+                str(parser.get_error(i)) for i in range(parser.num_errors))
+            raise RuntimeError(
+                f'Failed to parse {fp16_onnx_path}:\n{errors}')
+
+    config = builder.create_builder_config()
+    config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE,
+                                 workspace_mb * 1024 * 1024)
+
+    profile = builder.create_optimization_profile()
+    input_name = network.get_input(0).name
+    profile.set_shape(input_name, input_shape, input_shape, input_shape)
+    config.add_optimization_profile(profile)
+
+    serialized = builder.build_serialized_network(network, config)
+    if serialized is None:
+        raise RuntimeError(
+            f'TensorRT strongly-typed FP16 engine build failed for '
+            f'{fp16_onnx_path}. This model/op combination may need a '
+            'different op_block_list -- check the build log above for '
+            'which node TensorRT rejected.')
 
     out_dir = os.path.dirname(os.path.abspath(engine_path))
     os.makedirs(out_dir, exist_ok=True)
@@ -160,21 +289,26 @@ class TRTEngine:
         self.stream = _cuda_check(cudart.cudaStreamCreate())
 
         self.input_name = None
+        self.input_dtype = None
         self.output_names: List[str] = []
+        self._output_dtypes: Dict[str, np.dtype] = {}
         self._allocators: Dict[str, _OutputAllocator] = {}
         self._input_ptr = 0
         self._input_nbytes = 0
 
         for i in range(self.engine.num_io_tensors):
             name = self.engine.get_tensor_name(i)
+            dtype = trt.nptype(self.engine.get_tensor_dtype(name))
             if self.engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT:
                 if self.input_name is not None:
                     raise ValueError(
                         'TRTEngine only supports single-input engines, '
                         f'found a second input: {name!r}')
                 self.input_name = name
+                self.input_dtype = dtype
             else:
                 self.output_names.append(name)
+                self._output_dtypes[name] = dtype
                 allocator = _OutputAllocator()
                 self.context.set_output_allocator(name, allocator)
                 self._allocators[name] = allocator
@@ -183,10 +317,14 @@ class TRTEngine:
             raise ValueError(f'{engine_path} has no input tensor')
 
     def __call__(self, input_array: np.ndarray) -> Dict[str, np.ndarray]:
-        """Run the engine on `input_array` (already preprocessed: the
-        exact dtype/shape the engine was built for) and return a dict of
-        output tensor name -> numpy array."""
-        input_array = np.ascontiguousarray(input_array)
+        """Run the engine on `input_array` (already preprocessed to the
+        engine's expected input shape -- dtype is cast automatically to
+        whatever the engine was built for, e.g. float16 for an FP16
+        engine) and return a dict of output tensor name -> numpy array,
+        each in that output's own dtype (not necessarily float32 --
+        callers of `RTMOTensorRT` don't need to care, but a raw
+        `TRTEngine` caller does)."""
+        input_array = np.ascontiguousarray(input_array, dtype=self.input_dtype)
         self.context.set_input_shape(self.input_name, input_array.shape)
 
         nbytes = input_array.nbytes
@@ -211,7 +349,7 @@ class TRTEngine:
         for name in self.output_names:
             allocator = self._allocators[name]
             shape = allocator.shape
-            host_out = np.empty(shape, dtype=np.float32)
+            host_out = np.empty(shape, dtype=self._output_dtypes[name])
             _cuda_check(
                 cudart.cudaMemcpyAsync(
                     host_out.ctypes.data, allocator.ptr, host_out.nbytes,
@@ -247,6 +385,14 @@ class RTMOTensorRT(RTMO):
         engine = build_engine('rtmo-m.onnx', 'rtmo-m.engine')
         pose = RTMOTensorRT(engine_path=engine)
         keypoints, scores = pose(img)
+
+        # FP16: real speedup on TensorRT builds old enough to still have
+        # BuilderFlag.FP16 (e.g. TensorRT 10.x); a no-op fallback to FP32
+        # (with a warning) on TensorRT 11+, which dropped it -- see
+        # build_engine()'s fp16 docstring for why, and
+        # build_engine_strongly_typed_fp16 for the (not always faster,
+        # verify on your own hardware) TensorRT-11+ alternative.
+        pose = RTMOTensorRT(onnx_model='rtmo-m.onnx', fp16=True)
     """
 
     def __init__(self,
@@ -257,7 +403,8 @@ class RTMOTensorRT(RTMO):
                 std: tuple = None,
                 nms_thr: float = 0.45,
                 score_thr: float = 0.7,
-                to_openpose: bool = False):
+                to_openpose: bool = False,
+                fp16: bool = False):
         """
         Args:
             onnx_model: Source .onnx path, used to build the engine if
@@ -265,10 +412,15 @@ class RTMOTensorRT(RTMO):
                 already points at a prebuilt engine.
             engine_path: Path to a prebuilt (or to-be-built) .engine
                 file. Defaults to `onnx_model` with its extension
-                replaced by `.engine`.
+                replaced by `.engine` (`_fp16.engine` if `fp16=True`, so
+                the two precisions don't collide on the same cache path).
             model_input_size, mean, std, nms_thr, score_thr, to_openpose:
                 same as `RTMO` -- forwarded to the inherited
                 `preprocess()`/`postprocess()`/`__call__()` unchanged.
+            fp16: Passed to `build_engine()` -- see its docstring. Only
+                takes effect while building a new engine; has no effect
+                if `engine_path` already exists (that engine's actual
+                precision is whatever it was built with).
         """
         if onnx_model is not None and not os.path.exists(onnx_model):
             # Same convention as BaseTool.__init__: onnx_model may be a
@@ -281,7 +433,8 @@ class RTMOTensorRT(RTMO):
                 raise ValueError(
                     'Provide either onnx_model (to build an engine) or '
                     'engine_path (a prebuilt one).')
-            engine_path = os.path.splitext(onnx_model)[0] + '.engine'
+            suffix = '_fp16.engine' if fp16 else '.engine'
+            engine_path = os.path.splitext(onnx_model)[0] + suffix
 
         if not os.path.exists(engine_path):
             if onnx_model is None:
@@ -291,7 +444,8 @@ class RTMOTensorRT(RTMO):
             build_engine(
                 onnx_model,
                 engine_path,
-                input_shape=(1, 3, model_input_size[1], model_input_size[0]))
+                input_shape=(1, 3, model_input_size[1], model_input_size[0]),
+                fp16=fp16)
 
         self.engine_runner = TRTEngine(engine_path)
 
@@ -324,4 +478,9 @@ class RTMOTensorRT(RTMO):
         # exporter's exact naming (rtmo.py's own postprocess() expects
         # them in this [det_outputs, pose_outputs] order).
         outputs = sorted(raw_outputs.values(), key=lambda a: a.ndim)
-        return outputs
+        # Cast back to float32 regardless of the engine's internal
+        # precision (e.g. a mixed FP16/FP32 engine, see build_engine's
+        # `fp16` option) -- RTMO.postprocess() and everything downstream
+        # of it (multiclass_nms, draw_skeleton, ...) expects the same
+        # float32 arrays the onnxruntime/openvino backends produce.
+        return [o.astype(np.float32, copy=False) for o in outputs]
