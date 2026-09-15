@@ -1,6 +1,6 @@
 # rtmlib CPU/GPU Benchmark — Person Detection & 17-Keypoint Body Pose
 
-_Edge-AI, CPU-first evaluation of [rtmlib](https://github.com/Tau-J/rtmlib) v0.0.16 for person detection and COCO-17 keypoint pose estimation, benchmarked on this machine's own hardware against the `video_dataset_garcia_portugal` footage and a live Intel RealSense D435I feed._
+_Edge-AI, CPU-first evaluation of [rtmlib](https://github.com/Tau-J/rtmlib) v0.0.16 for person detection and COCO-17 keypoint pose estimation, benchmarked on this machine's own hardware (CPU/iGPU/NPU/dGPU) against the `video_dataset_garcia_portugal` footage and a live Intel RealSense D435I feed, plus a remote spot-check on an NVIDIA Jetson AGX Orin (§11)._
 
 ## 1. What rtmlib offers
 
@@ -176,7 +176,7 @@ Live-camera numbers track the offline-video numbers closely for every combo test
 
 ## 9. Future work
 
-- **NVIDIA Jetson AGX Orin (JetPack 7.2).** Same CPU-first question on genuinely embedded (not laptop-class) hardware, with the added TensorRT path that rtmlib doesn't currently expose as a `backend=` option. Requires physical/SSH access to a flashed device — see the response to this question in-conversation for the concrete package/version requirements. This is the one open item from the original scope; the other two candidates considered (crowd-density scaling, RF-DETR-Keypoints) were explicitly descoped — see §8.
+- Remaining open item: getting a genuine Jetson-targeted `onnxruntime-gpu` wheel (or a source build / TensorRT-backed path) working on the AGX Orin — see §11 for what was tried and why the generic PyPI wheel doesn't work as-is. The other two candidates originally considered (crowd-density scaling, RF-DETR-Keypoints) remain explicitly descoped — see §8.
 
 ## 10. Reproducing this benchmark
 
@@ -212,3 +212,31 @@ sg render -c "LD_LIBRARY_PATH=/snap/intel-npu-driver/current/usr/lib/x86_64-linu
 ```
 
 Requires `onnxruntime-gpu` + `nvidia-cudnn-cu12` (with its `lib/` on `LD_LIBRARY_PATH`) for real CUDA numbers, `openvino` + `sudo apt install intel-opencl-icd` for real Intel iGPU numbers, `openvino` + `sudo snap install intel-npu-driver` (plus the `sg render` + `LD_LIBRARY_PATH` dance above) for real NPU numbers, and `pyrealsense2` for the live-camera path — none of which are in this repo's default `requirements.txt`.
+
+## 11. NVIDIA Jetson AGX Orin (JetPack 7.2) — remote spot-check
+
+A short remote session (SSH to an AGX Orin, hostname `relai-orin`) to try `rtmo-balanced` on `onnxruntime` + CUDA and check a RealSense feed reportedly connected to that device. **Headline: the generic PyPI `onnxruntime-gpu` wheel installs cleanly and registers `CUDAExecutionProvider`, but fails at the first actual inference call — it doesn't ship kernels for Orin's GPU architecture.** The RealSense camera was not detected at all. Both are documented below as concrete findings, not just "didn't get to it."
+
+**Environment**: Jetson AGX Orin, Tegra234 SoC (Ampere GPU, compute capability **8.7** — an embedded-only architecture), 12-core Arm Cortex CPU, 61 GB RAM, JetPack 7.2 / Jetson Linux (L4T) R39.2, **CUDA 13.2.1 / cuDNN 9.20.0 / TensorRT 10.16.2 already installed system-wide via apt** (no manual cuDNN pip install needed, unlike the laptop in §6). Root disk: only **6.5 GB free of 54 GB** at the start of this session, shared with two other unrelated projects already on the box — every install had to be size-checked first.
+
+**Setup**: created `~/Data/human_activity_recognition/rtmlib/bench-venv` (Python 3.12, system default), rsynced this repo's worktree into `~/Data/human_activity_recognition/rtmlib/repo/` (1.1 MB, same commit as the rest of this report), installed `onnxruntime-gpu` + `opencv-python`/`opencv-contrib-python` + `tqdm`. `pip` found exactly one matching wheel on regular PyPI: `onnxruntime_gpu-1.30.0-cp312-cp312-manylinux_2_34_aarch64.whl` (205.7 MB) — this is a generic aarch64-Linux build (intended for Arm CPU + discrete NVIDIA GPU systems such as Grace-Hopper, not Jetson specifically), which is the only option regular PyPI offers for aarch64.
+
+**`rtmo-balanced` (RTMO-m) on `onnxruntime`/CUDA**:
+```
+providers: ['CUDAExecutionProvider', 'CPUExecutionProvider']   # registers fine
+build time: 8.3s                                               # session builds fine
+onnxruntime.capi.onnxruntime_pybind11_state.Fail:
+  [ONNXRuntimeError] : 1 : FAIL : Non-zero status code returned
+  while running Slice node. Name:'Slice_21' Status Message:
+  CUDA error cudaErrorNoKernelImageForDevice: no kernel image is
+  available for execution on the device
+```
+The CUDA context, session, and graph all build without complaint — this is not the missing-cuDNN silent-fallback failure mode from §6 (system cuDNN 9.20.0 / CUDA 13.2.1 exactly match what onnxruntime-gpu 1.30.0 asks for). It fails specifically at kernel *dispatch*: the wheel's compiled CUDA binary doesn't include machine code for compute capability 8.7, which is unique to Jetson's embedded Ampere GPU and not included in the generic manylinux aarch64 build's target architecture list. **This is a hard wall for the stock PyPI wheel, not a config problem.**
+
+**What would actually fix it** (not attempted — out of scope for a short remote session): a genuinely Jetson-targeted `onnxruntime-gpu` build. NVIDIA and the Jetson community publish these via a dedicated pip index (`pypi.jetson-ai-lab.dev`) — it resolved once during this session (`HTTP/2 200`) but returned `Could not resolve host` (NXDOMAIN) on every retry over several minutes afterward, so no Jetson-specific wheel could be pulled down. The remaining options are building onnxruntime from source on-device with `CMAKE_CUDA_ARCHITECTURES=87` (a multi-hour build, and would need considerably more than the 6.1 GB free disk available), or bypassing onnxruntime's CUDA EP entirely and using **TensorRT directly** — JetPack already ships a TensorRT 10.16.2 build natively matched to this exact device, which is NVIDIA's actually-recommended path for Jetson deployment, but rtmlib has no `backend='tensorrt'` option today (same gap flagged in this repo's response to the original Jetson question).
+
+**Working fallback for comparison** — `onnxruntime`/**CPU** on the same RTMO-m model: **4.17 fps (239.75 ms/frame)**, 3 people detected. ⚠️ Methodology note: no video file or working camera was available on the Jetson, so this used `demo.jpg` at its native 950×641 resolution repeated 45 times, **not** the 1920×1080 video-frame protocol used everywhere else in this report (§3-§5) — treat this as a rough existence-proof that the CPU path works, not as a like-for-like comparison against the laptop's numbers.
+
+**RealSense D435I: not detected.** `lsusb` showed no Intel-vendor (`8086:xxxx`) device on either USB bus (checked twice, a few minutes apart), and `/dev/video*` doesn't exist at all. `dmesg` was not readable to cross-check (`kernel.dmesg_restrict`, no sudo attempted in this session) for corroborating USB-enumeration errors. This contradicts the expectation that the camera was connected — it needs a physical check (cable, port, power) on the Jetson itself; nothing further could be diagnosed remotely.
+
+**Cleanup**: per instructions, `~/Data/human_activity_recognition/rtmlib/` (repo + venv) and the `/tmp/ort_check` wheel cache were removed from the Jetson at the end of this session, returning it to its original disk-free state.
