@@ -176,7 +176,7 @@ Live-camera numbers track the offline-video numbers closely for every combo test
 
 ## 9. Future work
 
-- Remaining open item: getting a genuine Jetson-targeted `onnxruntime-gpu` wheel (or a source build / TensorRT-backed path) working on the AGX Orin — see §11 for what was tried and why the generic PyPI wheel doesn't work as-is. The other two candidates originally considered (crowd-density scaling, RF-DETR-Keypoints) remain explicitly descoped — see §8.
+- **Jetson**: the working GPU path is now identified — TensorRT directly (§11.1), not onnxruntime's CUDA EP (generic PyPI wheel lacks Orin's SM 8.7 kernels, §11). What's still open: a directly-comparable, end-to-end (not bare-engine) FPS number for `rtmo-balanced` on Jetson would need a small Python/TensorRT runner reusing rtmlib's pre/post-processing — the sibling `rfdetr-pose` project (§11.2) shows what that looks like in practice for a different model. Adding a `backend='tensorrt'` option to rtmlib itself remains a larger, unstarted piece of work. The other two candidates originally considered (crowd-density scaling, RF-DETR-Keypoints) remain explicitly descoped — see §8. (RF-DETR-Keypoints specifically: turns out it's already been evaluated independently on this same Jetson, standalone vs. two-stage — see §11.2 — so the "not needed for now" scoping call from §8 still stands, but the data exists if it becomes relevant later.)
 
 ## 10. Reproducing this benchmark
 
@@ -215,7 +215,7 @@ Requires `onnxruntime-gpu` + `nvidia-cudnn-cu12` (with its `lib/` on `LD_LIBRARY
 
 ## 11. NVIDIA Jetson AGX Orin (JetPack 7.2) — remote spot-check
 
-A short remote session (SSH to an AGX Orin, hostname `relai-orin`) to try `rtmo-balanced` on `onnxruntime` + CUDA and check a RealSense feed reportedly connected to that device. **Headline: the generic PyPI `onnxruntime-gpu` wheel installs cleanly and registers `CUDAExecutionProvider`, but fails at the first actual inference call — it doesn't ship kernels for Orin's GPU architecture.** The RealSense camera was not detected at all. Both are documented below as concrete findings, not just "didn't get to it."
+A short remote session (SSH to an AGX Orin, hostname `relai-orin`) to try `rtmo-balanced` on `onnxruntime` + CUDA and check a RealSense feed reportedly connected to that device. **Headline: the generic PyPI `onnxruntime-gpu` wheel installs cleanly and registers `CUDAExecutionProvider`, but fails at the first actual inference call — it doesn't ship kernels for Orin's GPU architecture — while TensorRT, used directly, works cleanly and fast (§11.1)** — RTMO-m converts and runs with no op-support issues at 70-123 qps engine throughput. The RealSense camera was not detected at all. All three are documented below as concrete findings, not just "didn't get to it."
 
 **Environment**: Jetson AGX Orin, Tegra234 SoC (Ampere GPU, compute capability **8.7** — an embedded-only architecture), 12-core Arm Cortex CPU, 61 GB RAM, JetPack 7.2 / Jetson Linux (L4T) R39.2, **CUDA 13.2.1 / cuDNN 9.20.0 / TensorRT 10.16.2 already installed system-wide via apt** (no manual cuDNN pip install needed, unlike the laptop in §6). Root disk: only **6.5 GB free of 54 GB** at the start of this session, shared with two other unrelated projects already on the box — every install had to be size-checked first.
 
@@ -233,10 +233,51 @@ onnxruntime.capi.onnxruntime_pybind11_state.Fail:
 ```
 The CUDA context, session, and graph all build without complaint — this is not the missing-cuDNN silent-fallback failure mode from §6 (system cuDNN 9.20.0 / CUDA 13.2.1 exactly match what onnxruntime-gpu 1.30.0 asks for). It fails specifically at kernel *dispatch*: the wheel's compiled CUDA binary doesn't include machine code for compute capability 8.7, which is unique to Jetson's embedded Ampere GPU and not included in the generic manylinux aarch64 build's target architecture list. **This is a hard wall for the stock PyPI wheel, not a config problem.**
 
-**What would actually fix it** (not attempted — out of scope for a short remote session): a genuinely Jetson-targeted `onnxruntime-gpu` build. NVIDIA and the Jetson community publish these via a dedicated pip index (`pypi.jetson-ai-lab.dev`) — it resolved once during this session (`HTTP/2 200`) but returned `Could not resolve host` (NXDOMAIN) on every retry over several minutes afterward, so no Jetson-specific wheel could be pulled down. The remaining options are building onnxruntime from source on-device with `CMAKE_CUDA_ARCHITECTURES=87` (a multi-hour build, and would need considerably more than the 6.1 GB free disk available), or bypassing onnxruntime's CUDA EP entirely and using **TensorRT directly** — JetPack already ships a TensorRT 10.16.2 build natively matched to this exact device, which is NVIDIA's actually-recommended path for Jetson deployment, but rtmlib has no `backend='tensorrt'` option today (same gap flagged in this repo's response to the original Jetson question).
-
 **Working fallback for comparison** — `onnxruntime`/**CPU** on the same RTMO-m model: **4.17 fps (239.75 ms/frame)**, 3 people detected. ⚠️ Methodology note: no video file or working camera was available on the Jetson, so this used `demo.jpg` at its native 950×641 resolution repeated 45 times, **not** the 1920×1080 video-frame protocol used everywhere else in this report (§3-§5) — treat this as a rough existence-proof that the CPU path works, not as a like-for-like comparison against the laptop's numbers.
+
+**A genuinely Jetson-targeted `onnxruntime-gpu` build was not obtained** — NVIDIA and the Jetson community publish these via a dedicated pip index (`pypi.jetson-ai-lab.dev`); it resolved once during this session (`HTTP/2 200`) but returned `Could not resolve host` (NXDOMAIN) on every retry over several minutes afterward, so no Jetson-specific wheel could be pulled down that way. Building onnxruntime from source on-device with `CMAKE_CUDA_ARCHITECTURES=87` was also not attempted (multi-hour build, needs considerably more than the 6.1 GB free disk available). **TensorRT directly, bypassing onnxruntime's CUDA EP entirely, was tried instead — and it works cleanly.** See below.
+
+### 11.1 TensorRT directly via `trtexec` — RTMO-m works, no rtmlib integration
+
+JetPack ships TensorRT 10.16.2 natively matched to this exact chip (no architecture-mismatch risk, since `trtexec`/TensorRT compiles the engine locally rather than shipping precompiled kernels), and `libnvinfer-bin` (already installed) provides the `trtexec` CLI for a zero-code conversion+benchmark. Tried on RTMO-m's ONNX (the same 89 MB checkpoint used throughout §4, scp'd over from this machine's local model cache rather than re-downloaded):
+
+```bash
+trtexec --onnx=rtmo-m.onnx --saveEngine=rtmo-m.engine            # FP32
+trtexec --onnx=rtmo-m.onnx --saveEngine=rtmo-m-fp16.engine --fp16  # FP16
+```
+
+Both built and ran **with no op-support errors** — the concern that RTMO's baked-in one-stage decode/NMS might hit an unsupported op in TensorRT's ONNX parser (a real risk raised before trying this) didn't materialize. The dynamic batch dimension (the same one that needed a manual reshape fix for OpenVINO's NPU plugin in §6) was handled automatically, with only a warning: `Dynamic dimensions required for input: input, but no shapes were provided. Automatically overriding shape to: 1x3x640x640`.
+
+| Precision | Build time | Engine size | Throughput | Mean latency | p99 latency |
+|---|--:|--:|--:|--:|--:|
+| FP32 | 128.6 s | 92.7 MB | **70.2 qps** | 14.17 ms | 14.61 ms |
+| FP16 | ~7 min | 54.0 MB | **123.0 qps** | 8.07 ms | 8.16 ms |
+
+FP16 is ~1.75× faster than FP32 (as expected on Orin's tensor cores) at a ~42% smaller engine, for a ~1.5 min slower one-time build. **⚠️ These are `trtexec`'s own engine-level benchmarks — a fixed 1×3×640×640 input with random data, no image decode, no pre/post-processing (letterbox resize, SimCC/keypoint decode), no Python overhead at all.** They measure the ceiling of what the compute graph itself can do on this hardware, not an end-to-end video pipeline FPS like every other number in this report. A real number comparable to §4's tables would need a small Python/TensorRT runner reusing rtmlib's existing (backend-agnostic) pre/post-processing — not built in this session, since the question being answered here was narrower ("does the engine even build and run"). rtmlib has no `backend='tensorrt'` option today; getting a directly-comparable number would mean either adding one, or writing a standalone runner the way the sibling `rfdetr-pose` project did (§11.2).
+
+### 11.2 RF-DETR-Pose on this same Jetson — existing results from a sibling project
+
+`~/Data/human_activity_recognition/rfdetr-pose/` on this device (a separate, pre-existing project, not part of this session's work) already has Roboflow's **RF-DETR-Keypoint-Preview** (the model discussed earlier in this conversation as the newer one-stage keypoint architecture, xlarge variant, PyTorch-native via the official `rfdetr` package — see the RF-DETR/`supervision` discussion above) benchmarked on this exact hardware, in two configurations, both against the **same source video** used in this report's §4 confirmatory tests (`GX017153`, here a shortened 720p re-encode — not the 1920×1080 used elsewhere in this report, so treat resolution as a confound, not a controlled variable):
+
+**Standalone** (single model does detection + pose together, no separate detector — architecturally the RF-DETR analogue of RTMO) — `save_pose_videos.py` / `pose_trt_fp16_validation.json`:
+
+| Config | FPS | Notes |
+|---|--:|---|
+| PyTorch eager, FP32 | 9.00 | baseline, 50 frames |
+| TensorRT engine, FP16 (AutoCast export) | **31.77** | 300 frames, **3.5× faster** |
+
+**Two-stage, "with a detector"** (`human_recognition_pipeline.py`: RF-DETR-**nano** detects people, RF-DETR-Keypoint-Preview then runs *per person crop*, not on the full frame) — `bench_jetson_{none,tensorrt,fp16}/SHORTER_GX017153_W001_0_720p_results.json`, all on the same 300-frame/~1.96-people-per-frame clip:
+
+| `--optimize` | What it actually is | FPS |
+|---|---|--:|
+| `none` | both models, PyTorch eager, FP32 | 3.86 |
+| `tensorrt` | both models exported to TensorRT engines, FP32 | 4.53 |
+| `fp16` | both models, PyTorch JIT-traced, FP16 autocast (**not** a TensorRT engine, despite the name symmetry with 11.1's `--fp16`) | 8.50 |
+
+**The standalone/two-stage gap here (31.77 vs 8.50 fps, both TensorRT/FP16-optimized) is the same story as §7 finding 3 in miniature**: paying the pose model's cost once per detected person (crop + resize + a full forward pass *per person*) is dramatically more expensive than one pass over the whole frame, on this hardware exactly as much as it was on the laptop. It's also a second, independent confirmation that a one-stage architecture (RTMO on the laptop/NPU/iGPU, RF-DETR-Keypoint-Preview standalone here) is the right default for this kind of workload when the goal is throughput rather than per-model debuggability.
+
+**Not directly comparable to 11.1's RTMO-m numbers**: different model (RF-DETR-Keypoint-Preview-xlarge, 163 MB PyTorch checkpoint vs. RTMO-m, ~90 MB), different measurement (full Python video pipeline incl. decode/crop/pre/post vs. `trtexec`'s bare engine loop), different resolution (720p vs. 640×640 engine input), and a different codebase entirely (Roboflow's own `rfdetr` PyTorch package vs. rtmlib's ONNX pipeline). Presented side by side here as two independent, mutually-reinforcing data points that **TensorRT — not onnxruntime's CUDA EP — is the working, recommended GPU path on this Jetson**, not as a head-to-head model comparison.
 
 **RealSense D435I: not detected.** `lsusb` showed no Intel-vendor (`8086:xxxx`) device on either USB bus (checked twice, a few minutes apart), and `/dev/video*` doesn't exist at all. `dmesg` was not readable to cross-check (`kernel.dmesg_restrict`, no sudo attempted in this session) for corroborating USB-enumeration errors. This contradicts the expectation that the camera was connected — it needs a physical check (cable, port, power) on the Jetson itself; nothing further could be diagnosed remotely.
 
-**Cleanup**: per instructions, `~/Data/human_activity_recognition/rtmlib/` (repo + venv) and the `/tmp/ort_check` wheel cache were removed from the Jetson at the end of this session, returning it to its original disk-free state.
+**Cleanup**: per instructions, `~/Data/human_activity_recognition/rtmlib/` (repo, venv, and the `trt/` folder with the ONNX file and both `.engine` builds) and the `/tmp/ort_check` wheel cache were removed from the Jetson at the end of this session, returning it to its original disk-free state. `~/Data/human_activity_recognition/rfdetr-pose/` (§11.2) was only read from, never modified.
