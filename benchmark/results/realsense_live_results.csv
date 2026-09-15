@@ -1,0 +1,10 @@
+tag,video,src_resolution,bench_resolution,src_fps,pipeline,backend,device,det_ms,pose_ms,total_ms,fps,avg_persons,status,error
+realsense_live,D435I_color_live,1920x1080,1920x1080,30,lightweight (YOLOX-tiny + RTMPose-s),onnxruntime,cpu,72.02,24.17,96.20,10.40,1.00,ok,
+realsense_live,D435I_color_live,1920x1080,1920x1080,30,lightweight (YOLOX-tiny + RTMPose-s),onnxruntime,cuda,6.97,2.54,9.51,105.18,1.00,ok,
+realsense_live,D435I_color_live,1920x1080,1920x1080,30,lightweight (YOLOX-tiny + RTMPose-s),openvino,cpu,19.26,6.75,26.01,38.45,1.00,ok,
+realsense_live,D435I_color_live,1920x1080,1920x1080,30,balanced (YOLOX-m + RTMPose-m),onnxruntime,cpu,373.38,44.79,418.18,2.39,1.00,ok,
+realsense_live,D435I_color_live,1920x1080,1920x1080,30,balanced (YOLOX-m + RTMPose-m),onnxruntime,cuda,27.04,4.02,31.06,32.20,1.00,ok,
+realsense_live,D435I_color_live,1920x1080,1920x1080,30,balanced (YOLOX-m + RTMPose-m),openvino,cpu,181.87,28.07,209.94,4.76,1.00,ok,
+realsense_live,D435I_color_live,1920x1080,1920x1080,30,"rtmo-balanced (RTMO-m, one-stage)",onnxruntime,cpu,0.00,143.91,143.91,6.95,1.00,ok,
+realsense_live,D435I_color_live,1920x1080,1920x1080,30,"rtmo-balanced (RTMO-m, one-stage)",onnxruntime,cuda,0.00,20.79,20.79,48.09,1.00,ok,
+realsense_live,D435I_color_live,1920x1080,1920x1080,30,"rtmo-balanced (RTMO-m, one-stage)",openvino,cpu,0.00,188.05,188.05,5.32,1.00,ok,
