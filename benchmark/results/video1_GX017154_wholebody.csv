@@ -1,0 +1,9 @@
+tag,video,src_resolution,bench_resolution,src_fps,pipeline,backend,device,det_ms,pose_ms,total_ms,fps,avg_persons,status,error
+wholebody_GX017154,GX017154_W001_1.MP4,3840x2160,1920x1080,29.97,wholebody-dwpose-t (YOLOX-tiny + DWPose-t),onnxruntime,cpu,70.33,53.65,123.99,8.07,3.00,ok,
+wholebody_GX017154,GX017154_W001_1.MP4,3840x2160,1920x1080,29.97,wholebody-dwpose-t (YOLOX-tiny + DWPose-t),openvino,cpu,19.00,17.93,36.93,27.08,3.00,ok,
+wholebody_GX017154,GX017154_W001_1.MP4,3840x2160,1920x1080,29.97,wholebody-rtmw-m (YOLOX-tiny + RTMW-m),onnxruntime,cpu,99.56,212.83,312.39,3.20,3.00,ok,
+wholebody_GX017154,GX017154_W001_1.MP4,3840x2160,1920x1080,29.97,wholebody-rtmw-m (YOLOX-tiny + RTMW-m),openvino,cpu,23.97,58.78,82.76,12.08,3.00,ok,
+wholebody_GX017154,GX017154_W001_1.MP4,3840x2160,1920x1080,29.97,wholebody-rtmw-l (YOLOX-tiny + RTMW-l),onnxruntime,cpu,110.68,815.64,926.33,1.08,3.00,ok,
+wholebody_GX017154,GX017154_W001_1.MP4,3840x2160,1920x1080,29.97,wholebody-rtmw-l (YOLOX-tiny + RTMW-l),openvino,cpu,60.69,765.60,826.30,1.21,3.00,ok,
+wholebody_GX017154,GX017154_W001_1.MP4,3840x2160,1920x1080,29.97,wholebody-vitpose-s (YOLOX-tiny + ViTPose++-s),onnxruntime,cpu,86.40,401.71,488.11,2.05,3.00,ok,
+wholebody_GX017154,GX017154_W001_1.MP4,3840x2160,1920x1080,29.97,wholebody-vitpose-s (YOLOX-tiny + ViTPose++-s),openvino,cpu,40.72,206.99,247.72,4.04,3.00,ok,

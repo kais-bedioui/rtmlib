@@ -30,6 +30,24 @@ POSE_CONFIGS = {
     'rtmpose-x': dict(
         url='https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/rtmpose-x_simcc-body7_pt-body7_700e-384x288-71d7b7e9_20230629.zip',  # noqa
         input_size=(288, 384)),
+    # --- WholeBody 133kp (body+hands+feet+face), same RTMPose class/head
+    # architecture as the Body-17 rtmpose-* entries above, just a bigger
+    # output head and a wholebody-trained checkpoint. ---
+    'dwpose-t': dict(
+        url='https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/rtmpose-t_simcc-ucoco_dw-ucoco_270e-256x192-dcf277bf_20230728.zip',  # noqa
+        input_size=(192, 256)),
+    'rtmw-m': dict(
+        url='https://download.openmmlab.com/mmpose/v1/projects/rtmw/onnx_sdk/rtmw-dw-m-s_simcc-cocktail14_270e-256x192_20231122.zip',  # noqa
+        input_size=(192, 256)),
+    'rtmw-l': dict(
+        url='https://download.openmmlab.com/mmpose/v1/projects/rtmw/onnx_sdk/rtmw-dw-x-l_simcc-cocktail14_270e-384x288_20231122.zip',  # noqa
+        input_size=(288, 384)),
+    # ViTPose++ wholebody -- a different architecture/class (transformer,
+    # not RTMPose's SimCC conv head); build_pose() dispatches on the
+    # 'vitpose-' prefix the same way build_detector() dispatches RFDETR.
+    'vitpose-s-wholebody': dict(
+        url='https://huggingface.co/JunkyByte/easy_ViTPose/resolve/main/onnx/wholebody/vitpose-s-wholebody.onnx',  # noqa
+        input_size=(192, 256)),
 }
 
 RTMO_CONFIGS = {
@@ -53,6 +71,13 @@ PIPELINES = {
     'rtmo-lightweight (RTMO-s, one-stage)': ('one-stage', 'rtmo-s'),
     'rtmo-balanced (RTMO-m, one-stage)': ('one-stage', 'rtmo-m'),
     'rtmo-performance (RTMO-l, one-stage)': ('one-stage', 'rtmo-l'),
+    # WholeBody 133kp: same yolox-tiny detector as the lightweight Body-17
+    # tier (already-cached, kept cheap deliberately so these numbers isolate
+    # the *pose* model's extra cost over a 17kp head, not detector choice).
+    'wholebody-dwpose-t (YOLOX-tiny + DWPose-t)': ('two-stage', 'yolox-tiny', 'dwpose-t'),
+    'wholebody-rtmw-m (YOLOX-tiny + RTMW-m)': ('two-stage', 'yolox-tiny', 'rtmw-m'),
+    'wholebody-rtmw-l (YOLOX-tiny + RTMW-l)': ('two-stage', 'yolox-tiny', 'rtmw-l'),
+    'wholebody-vitpose-s (YOLOX-tiny + ViTPose++-s)': ('two-stage', 'yolox-tiny', 'vitpose-s-wholebody'),
 }
 
 BACKENDS = [
@@ -75,10 +100,11 @@ def build_detector(det_key, backend, device):
 
 
 def build_pose(pose_key, backend, device):
-    from rtmlib import RTMPose
+    from rtmlib import RTMPose, ViTPose
     cfg = POSE_CONFIGS[pose_key]
-    return RTMPose(onnx_model=cfg['url'], model_input_size=cfg['input_size'],
-                    to_openpose=False, backend=backend, device=device)
+    cls = ViTPose if pose_key.startswith('vitpose') else RTMPose
+    return cls(onnx_model=cfg['url'], model_input_size=cfg['input_size'],
+               to_openpose=False, backend=backend, device=device)
 
 
 def build_rtmo(rtmo_key, backend, device):

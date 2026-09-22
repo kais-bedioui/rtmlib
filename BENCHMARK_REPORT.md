@@ -281,3 +281,41 @@ FP16 is ~1.75× faster than FP32 (as expected on Orin's tensor cores) at a ~42% 
 **RealSense D435I: not detected.** `lsusb` showed no Intel-vendor (`8086:xxxx`) device on either USB bus (checked twice, a few minutes apart), and `/dev/video*` doesn't exist at all. `dmesg` was not readable to cross-check (`kernel.dmesg_restrict`, no sudo attempted in this session) for corroborating USB-enumeration errors. This contradicts the expectation that the camera was connected — it needs a physical check (cable, port, power) on the Jetson itself; nothing further could be diagnosed remotely.
 
 **Cleanup**: per instructions, `~/Data/human_activity_recognition/rtmlib/` (repo, venv, and the `trt/` folder with the ONNX file and both `.engine` builds) and the `/tmp/ort_check` wheel cache were removed from the Jetson at the end of this session, returning it to its original disk-free state. `~/Data/human_activity_recognition/rfdetr-pose/` (§11.2) was only read from, never modified.
+
+## 12. Real-time CPU wholebody (133kp: body+hands+feet+face) — does anything clear 5 FPS?
+
+Follow-up question: is there a real-time (>5 FPS) CPU option for **wholebody** pose (COCO-Wholebody 133 keypoints — body-17 + both hands + feet + face), rather than just body-17? rtmlib's wholebody model zoo has three two-stage families, all needing a YOLOX detector first, same as the Body-17 pipelines in §4: **DWPose** / **RTMW** (both the same `RTMPose` SimCC-head class as the body-only models, just a wholebody-trained checkpoint with a bigger output head) and **ViTPose++ wholebody** (a separate transformer-based class). Benchmarked on `GX017154_W001_1.MP4` (1920×1080, 3 people in frame), same methodology as §4: `yolox-tiny` detector (kept deliberately cheap/already-cached, to isolate the *pose* model's added cost over a 17kp head), 40 timed frames + 5 warmup, CPU only (onnxruntime + OpenVINO).
+
+| Pipeline | Backend | FPS | Total (ms) | Det (ms) | Pose (ms) |
+|---|---|--:|--:|--:|--:|
+| **DWPose-t** (256×192) | onnxruntime / CPU | 8.1 | 124.0 | 70.3 | 53.7 |
+| | openvino / **CPU** | **27.1** | 36.9 | 19.0 | 17.9 |
+| **RTMW-m** (256×192) | onnxruntime / CPU | 3.2 | 312.4 | 99.6 | 212.8 |
+| | openvino / **CPU** | **12.1** | 82.8 | 24.0 | 58.8 |
+| **RTMW-l** (384×288) | onnxruntime / CPU | 1.1 | 926.3 | 110.7 | 815.6 |
+| | openvino / CPU | 1.2 | 826.3 | 60.7 | 765.6 |
+| **ViTPose++-s wholebody** (256×192) | onnxruntime / CPU | 2.1 | 488.1 | 86.4 | 401.7 |
+| | openvino / CPU | 4.0 | 247.7 | 40.7 | 207.0 |
+
+**Yes — DWPose-t on OpenVINO/CPU clears real-time by a wide margin: 27.1 fps**, over 5× the >5 FPS bar, for full 133-keypoint wholebody output (body+hands+feet+face) at 1080p with 3 people in frame. RTMW-m/OpenVINO also clears it comfortably (12.1 fps). This matches the §7 pattern exactly — OpenVINO's CPU plugin beats onnxruntime's by roughly the same 2.4-3.4× margin seen throughout §4 for two-stage pipelines, RTMW-m here included (3.2→12.1 fps, +3.8×) — and the detector (`yolox-tiny`) again dominates less than the pose stage once the pose head gets heavy (RTMW-l's pose stage alone is 766-816 ms, dwarfing its ~60-111 ms detector). ViTPose++'s transformer head is markedly slower than the RTMPose-family conv heads at a comparable AP tier (RTMPose/DWPose-family models are simply much better suited to CPU than transformer-based ViTPose++ here) and falls just short of the bar (4.0 fps best case).
+
+**Practical read: DWPose-t is the answer**, not a Body+Hand fallback — see §12.1 for why the fallback was benchmarked anyway (it was planned as the likely-needed path before this result came in) and how it compares.
+
+### 12.1 Fallback comparison: Body (RTMO-lightweight) + Hand run independently
+
+Benchmarked for comparison/completeness (script: `benchmark/bench_body_plus_hand.py`) — `Body(pose='rtmo', mode='lightweight')` (RTMO-s, one-stage, the fastest body option in this report) and `Hand()` (RTMDet-nano + RTMPose-m hand, 21kp) run independently on the same frame, timings summed:
+
+| Backend | FPS | Total (ms) | Body (ms) | Hand (ms) | Avg. persons | Avg. hand detections |
+|---|--:|--:|--:|--:|--:|--:|
+| onnxruntime / CPU | 2.0 | 509.0 | 363.1 | 145.9 | 3.00 | 1.00 |
+| openvino / CPU | **5.5** | 182.0 | 132.8 | 49.1 | 3.00 | 1.00 |
+
+OpenVINO/CPU *just* clears 5 FPS (5.50) — but note the RTMO-lightweight body-only cost here (132.8 ms) is ~1.5-2× higher than this same model/backend/tier scored elsewhere in this report on other clips (§4: 55-73 ms range) at similar or lower person counts; this machine is a shared dev workstation (§2's caveat) and the gap is plausibly load/contention on this run rather than a property of this video specifically — treat 5.50 fps as a "right at the edge, not comfortably above it" result, more fragile than DWPose-t's 27.1 fps headroom. onnxruntime/CPU doesn't clear the bar at all (2.0 fps).
+
+Given §12's DWPose-t result, this combination is **not recommended** as the primary path — it's slower, and it costs real capability versus a true wholebody model even where it does clear the bar:
+
+- **No shared identity between a body and "its" hands.** `Body` and `Hand` are two fully independent one-stage/two-stage detectors with no association logic — with `avg_hand_dets=1.00` against `avg_body_persons=3.00` here, there is no way from this pipeline alone to know *which* of the 3 people that 1 detected hand belongs to. A wholebody model's hand keypoints come from the same per-person top-down crop as that person's body keypoints, so the association is automatic.
+- **No face or feet keypoints at all** — only body-17 + hands-21×2, vs. wholebody's full 133 (adds ~68 face + 6 foot keypoints DWPose/RTMW include).
+- **A smarter version of this combo is possible but not benchmarked here**: crop the hand detector's search region around each body's own wrist keypoints (RTMO already outputs wrist position + confidence) instead of running `RTMDet` hand detection on the full frame independently. This would fix the identity-association problem for free (the crop *is* the association) and should also be faster (a small wrist-centered crop is cheaper to detect hands in than a full 1920×1080 frame) — but it's a real implementation task (crop/pad/offset logic mirroring `RTMPose`'s own top-down pattern), not a config change, and wasn't built or measured in this pass given §12's DWPose-t result removes the urgency.
+
+**Bottom line: use `wholebody-dwpose-t` (YOLOX-tiny + DWPose-t, OpenVINO/CPU) for real-time CPU wholebody pose — 27.1 fps with full body+hands+feet+face output, no Body+Hand fallback needed.**
