@@ -1,6 +1,33 @@
 """TensorRT-backed RTMO, as an alternative to rtmlib's opencv/onnxruntime/
 openvino backends.
 
+**Deployment status**: verified end-to-end on x86 + an NVIDIA dGPU (RTX
+500 Ada Generation Laptop GPU) -- correct output (person count and
+keypoints match the onnxruntime backend), 74.5 fps full pipeline on
+`rtmo-m`, beating onnxruntime's CUDA EP (48.9 fps) for the same tier.
+Not yet wired into rtmlib's `backend=` dispatch (`tools/base.py`) or the
+benchmark harness in the sibling `worktree-rtmlib-benchmark` -- import
+`RTMOTensorRT` directly, it isn't reachable via `backend='tensorrt'` on
+the existing classes.
+
+**NOT yet verified on Jetson**, despite Jetson TensorRT being discussed
+elsewhere in this project (see `worktree-rtmlib-benchmark`'s
+`BENCHMARK_REPORT.md` §11.1): that work validated raw TensorRT via the
+`trtexec` CLI directly on a Jetson AGX Orin (JetPack 7.2, TensorRT
+10.16.2) -- a different code path from this module, which drives the
+TensorRT Python API (`Builder.create_network()`, `IOutputAllocator`,
+`execute_async_v3`) and the `cuda-python` package (`cuda.bindings.
+runtime`) directly. Neither of those has been exercised on a Jetson
+through *this* class. Known open questions before trusting it there:
+whether `cuda-python`'s Tegra/Jetson wheel matches this API shape, and
+whether TensorRT 10.16.2's Python builder API behaves identically to
+whatever version this was built against on x86 (the FP16-flag removal
+is already handled defensively -- see `build_engine()` -- but that's
+the one version difference that was actually hit and fixed, not a
+guarantee every other call in this file is equally version-safe).
+Build and run `build_engine()` + `RTMOTensorRT` directly on a Jetson
+before relying on this there.
+
 TensorRT engines are hardware- and TensorRT-version-specific and must be
 built ahead of time on the machine they'll run on (an engine built on one
 GPU/TensorRT version will not load on another) -- unlike rtmlib's other
