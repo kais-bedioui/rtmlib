@@ -116,3 +116,4 @@ venv.bak/
 
 *.DS_Store
 yolo26x.pt
+yolo26s-pose.pt
