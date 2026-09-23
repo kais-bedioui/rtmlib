@@ -10,23 +10,35 @@ benchmark harness in the sibling `worktree-rtmlib-benchmark` -- import
 `RTMOTensorRT` directly, it isn't reachable via `backend='tensorrt'` on
 the existing classes.
 
-**NOT yet verified on Jetson**, despite Jetson TensorRT being discussed
-elsewhere in this project (see `worktree-rtmlib-benchmark`'s
-`BENCHMARK_REPORT.md` §11.1): that work validated raw TensorRT via the
-`trtexec` CLI directly on a Jetson AGX Orin (JetPack 7.2, TensorRT
-10.16.2) -- a different code path from this module, which drives the
-TensorRT Python API (`Builder.create_network()`, `IOutputAllocator`,
-`execute_async_v3`) and the `cuda-python` package (`cuda.bindings.
-runtime`) directly. Neither of those has been exercised on a Jetson
-through *this* class. Known open questions before trusting it there:
-whether `cuda-python`'s Tegra/Jetson wheel matches this API shape, and
-whether TensorRT 10.16.2's Python builder API behaves identically to
-whatever version this was built against on x86 (the FP16-flag removal
-is already handled defensively -- see `build_engine()` -- but that's
-the one version difference that was actually hit and fixed, not a
-guarantee every other call in this file is equally version-safe).
-Build and run `build_engine()` + `RTMOTensorRT` directly on a Jetson
-before relying on this there.
+**Verified on Jetson AGX Orin** (JetPack 7.2, TensorRT 10.16.2.10, Python
+3.12, aarch64) -- this class specifically, not just `trtexec` (§11.1's
+CLI validation was a different code path; both `cuda-python`'s Tegra
+wheel and TensorRT 10.x's Python builder API turned out to work
+exactly as the x86 code assumed, closing the open questions this
+docstring used to flag). `build_engine()` + `RTMOTensorRT` on `rtmo-m`,
+run end-to-end (preprocess + TensorRT + postprocess, not a bare-engine
+loop) against the same 720p clip `worktree-rtmlib-benchmark`'s §11.2
+rfdetr-pose numbers were measured on, 40 timed frames + 5 warmup,
+correct output at both precisions (1 person on the fixed test frame,
+`avg_people` identical between FP32/FP16 and onnxruntime -- no missed
+or extra detections from quantization):
+
+| Backend | Mean latency | FPS | vs. onnxruntime/CPU |
+|---|--:|--:|--:|
+| onnxruntime / CPU | 235.3 ms | 4.25 | 1x |
+| RTMOTensorRT FP32 | 20.61 ms | 48.52 | 11.4x |
+| RTMOTensorRT FP16 | 11.99 ms | 83.35 | 19.6x |
+
+FP32 build took 134.8s, FP16 410.5s (both in line with §11.1's
+`trtexec` build times for the same model -- 128.6s / ~7min -- so the
+Python builder API isn't meaningfully slower to build with than the
+CLI). FP16 gives a 1.72x speedup over FP32 here, consistent with the
+1.75x measured on x86. onnxruntime's CUDA EP is not included in this
+table -- confirmed a hard dead end on this hardware independently of
+speed (the PyPI aarch64 wheel lacks kernels for Orin's SM 8.7, see
+`BENCHMARK_REPORT.md` §11) -- so TensorRT is not just the fastest GPU
+option here, it is the *only* working one. **Bottom line: this class is
+genuinely deployable on Jetson**, not just architecturally plausible.
 
 TensorRT engines are hardware- and TensorRT-version-specific and must be
 built ahead of time on the machine they'll run on (an engine built on one
