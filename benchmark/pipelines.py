@@ -75,6 +75,11 @@ PIPELINES = {
     # tier (already-cached, kept cheap deliberately so these numbers isolate
     # the *pose* model's extra cost over a 17kp head, not detector choice).
     'wholebody-dwpose-t (YOLOX-tiny + DWPose-t)': ('two-stage', 'yolox-tiny', 'dwpose-t'),
+    # Same DWPose-t pose head, next detector tier up -- §13.2's fix for
+    # yolox-tiny's static background false positive was a bbox-size filter,
+    # which isn't ideal for a deployment system; this pairing checks what a
+    # bigger/more discriminative detector costs in FPS as the alternative fix.
+    'wholebody-dwpose-t-m (YOLOX-m + DWPose-t)': ('two-stage', 'yolox-m', 'dwpose-t'),
     'wholebody-rtmw-m (YOLOX-tiny + RTMW-m)': ('two-stage', 'yolox-tiny', 'rtmw-m'),
     'wholebody-rtmw-l (YOLOX-tiny + RTMW-l)': ('two-stage', 'yolox-tiny', 'rtmw-l'),
     'wholebody-vitpose-s (YOLOX-tiny + ViTPose++-s)': ('two-stage', 'yolox-tiny', 'vitpose-s-wholebody'),

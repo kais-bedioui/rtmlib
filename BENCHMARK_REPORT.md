@@ -391,3 +391,28 @@ Overall recall: 92.2%
 *t=280s, the single worst-recall frame in the sample: YOLO26x finds 3 people (red), RTMO-lightweight finds 1 (green) — one missed person is partly screened by the metal scaffolding tower, the other is standing close behind/beside the detected person.*
 
 Zero false positives were observed in either direction across all 290 frames — every miss is under-detection under occlusion/crowding, never a spurious extra detection. **Practical read**: RTMO-lightweight is fine for use cases tolerant of occasionally missing one person in a cluster for a frame or two (activity recognition on the closest/most prominent person, general presence detection) — recall on genuinely separated people stays ≥97% — but risky for exhaustive headcounting or safety/compliance monitoring where every person must be accounted for, especially as scenes get denser (55% recall already at 4 people in this small sample). A two-stage pipeline (this report's own `balanced`/`performance` YOLOX tiers, or YOLO26x itself) trades RTMO's flat per-person cost (§7) for meaningfully better crowded-scene recall — a real trade-off, not a free lunch.
+
+## 15. A reusable RealSense benchmark clip, and the cost of swapping YOLOX-tiny → YOLOX-m
+
+§13.2's fix for `yolox-tiny`'s static background false positive was a bbox-size filter — a reasonable mitigation, but not an ideal one for a deployment system (it's scene-tuned: the `--min-height-frac` threshold was picked to clear one specific 45×99px box on one specific background, and a different room/mounting height could need a different value). The alternative is simply a bigger, more discriminative detector. This section records a **raw, reusable RealSense clip** (mirroring how `video_dataset_garcia_portugal`'s GoPro footage is used throughout this report) and benchmarks several keypoint-extraction approaches against it — including the `yolox-tiny → yolox-m` swap specifically — to put a real FPS number on that trade-off.
+
+**Clip**: `benchmark/realsense_demo/raw_capture_1280x720.mp4` (14 MB, 1280×720, 600 frames / 20s, unannotated — camera output only, no inference in the capture loop) — a seated, close-up, naturally-moving single-person clip (talking, hand-to-chin gestures, side-profile turns), captured the same way `benchmark/realsense_record_raw.py` documents. Benchmarked with the existing offline harness (`run_bench.py`, 40 timed frames + 5 warmup, same methodology as §4/§12), results in `benchmark/results/realsense_raw_capture.csv`:
+
+| Pipeline | Backend | FPS | Total (ms) |
+|---|---|--:|--:|
+| lightweight (YOLOX-tiny + RTMPose-s) | onnxruntime / CPU | 11.1 | 90.5 |
+| | openvino / **CPU** | **37.8** | 26.4 |
+| balanced (YOLOX-m + RTMPose-m) | onnxruntime / CPU | 2.4 | 415.1 |
+| | openvino / **CPU** | **8.1** | 123.1 |
+| wholebody-dwpose-t (YOLOX-**tiny** + DWPose-t) | onnxruntime / CPU | 12.2 | 82.2 |
+| | openvino / **CPU** | **39.2** | 25.5 |
+| wholebody-dwpose-t-m (YOLOX-**m** + DWPose-t) | onnxruntime / CPU | 2.5 | 404.5 |
+| | openvino / **CPU** | **8.6** | 116.9 |
+| rtmo-lightweight (RTMO-s, one-stage) | onnxruntime / **CPU** | **18.0** | 55.4 |
+| | openvino / CPU | 14.9 | 67.1 |
+
+**Every number holds up against §4/§12/§13 on this new clip/machine-state** (e.g. `wholebody-dwpose-t`/openvino/CPU: 39.2 fps here vs. 27.1 fps on §12's 1080p/3-person GX017154 and 33.4 fps on §13's live standing-person probe — same ballpark, higher here because this clip is 720p/1-person, both cheaper dimensions). One new wrinkle: `rtmo-lightweight` **flips** here — onnxruntime/CPU (18.0 fps) beats openvino/CPU (14.9 fps), the opposite of §4's ranking for the same tier (openvino 14.0 > onnxruntime 11.2) — another instance of the "RTMO CPU backend ranking is close and scene/clip-dependent" pattern already flagged in §4, not a new phenomenon.
+
+**The swap costs ~4.6× the FPS**: `wholebody-dwpose-t-m` (YOLOX-m) drops to 8.6 fps openvino/CPU, down from `wholebody-dwpose-t`'s (YOLOX-tiny) 39.2 fps — still comfortably real-time (>5 fps), just far less headroom than the tiny-detector tier had (§13.3: the tiny tier had enough spare FPS to be entirely camera-bound, not model-bound; the `m` tier would not be).
+
+**Whether `yolox-m` actually avoids the false positive itself is unverified, honestly** — this raw clip's tight, close-up framing never reproduces the original ghost even with `yolox-tiny` (checked across the first 5s), and a live re-check against the camera's *current* position/framing (moved since §13.2's session) doesn't reproduce it either, for either detector tier. The false positive is tied to a specific static background composition that isn't reliably reproducible on demand from this desk. **Recommendation given that uncertainty**: keep the §13.2 min-bbox-height filter regardless of detector tier — it's cheap, general-purpose, and already proven to work — rather than assuming a detector-tier swap alone resolves it. If `yolox-m` is adopted for deployment, do it for its independently-real benefit (a larger, more discriminative backbone is plausibly more robust across unseen scenes generally, consistent with §14's finding that bigger detectors catch more occluded/crowded cases too), at the now-measured ~4.6× FPS cost — not as a substitute for the filter.

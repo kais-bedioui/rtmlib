@@ -1,0 +1,11 @@
+tag,video,src_resolution,bench_resolution,src_fps,pipeline,backend,device,det_ms,pose_ms,total_ms,fps,avg_persons,status,error
+realsense_raw_1280x720,raw_capture_1280x720.mp4,1280x720,1280x720,30.0,lightweight (YOLOX-tiny + RTMPose-s),onnxruntime,cpu,68.63,21.84,90.48,11.05,1.00,ok,
+realsense_raw_1280x720,raw_capture_1280x720.mp4,1280x720,1280x720,30.0,lightweight (YOLOX-tiny + RTMPose-s),openvino,cpu,19.56,6.88,26.44,37.82,1.00,ok,
+realsense_raw_1280x720,raw_capture_1280x720.mp4,1280x720,1280x720,30.0,balanced (YOLOX-m + RTMPose-m),onnxruntime,cpu,370.95,44.13,415.09,2.41,1.00,ok,
+realsense_raw_1280x720,raw_capture_1280x720.mp4,1280x720,1280x720,30.0,balanced (YOLOX-m + RTMPose-m),openvino,cpu,105.28,17.85,123.14,8.12,1.00,ok,
+realsense_raw_1280x720,raw_capture_1280x720.mp4,1280x720,1280x720,30.0,wholebody-dwpose-t (YOLOX-tiny + DWPose-t),onnxruntime,cpu,63.60,18.63,82.23,12.16,1.00,ok,
+realsense_raw_1280x720,raw_capture_1280x720.mp4,1280x720,1280x720,30.0,wholebody-dwpose-t (YOLOX-tiny + DWPose-t),openvino,cpu,19.03,6.49,25.52,39.19,1.00,ok,
+realsense_raw_1280x720,raw_capture_1280x720.mp4,1280x720,1280x720,30.0,wholebody-dwpose-t-m (YOLOX-m + DWPose-t),onnxruntime,cpu,384.76,19.74,404.51,2.47,1.00,ok,
+realsense_raw_1280x720,raw_capture_1280x720.mp4,1280x720,1280x720,30.0,wholebody-dwpose-t-m (YOLOX-m + DWPose-t),openvino,cpu,108.59,8.34,116.93,8.55,1.00,ok,
+realsense_raw_1280x720,raw_capture_1280x720.mp4,1280x720,1280x720,30.0,"rtmo-lightweight (RTMO-s, one-stage)",onnxruntime,cpu,0.00,55.42,55.42,18.04,1.00,ok,
+realsense_raw_1280x720,raw_capture_1280x720.mp4,1280x720,1280x720,30.0,"rtmo-lightweight (RTMO-s, one-stage)",openvino,cpu,0.00,67.05,67.05,14.91,1.00,ok,
