@@ -50,6 +50,21 @@ def get_frame(pipeline):
     return np.asanyarray(color.get_data())
 
 
+def filter_small_boxes(bboxes, frame_height, min_height_frac):
+    """yolox-tiny (score_thr=0.7, its default) fires a static, >=0.95-confidence
+    false positive on a small piece of background equipment in this room --
+    a 45x99px box, ~14% of frame height, in a fixed image location, every
+    frame -- score thresholding alone can't remove it (verified: still fires
+    at score_thr=0.95). A real person filling the frame at typical webcam
+    distance is far taller than that, so a minimum bbox-height filter
+    removes it without a special case for this one box."""
+    if len(bboxes) == 0:
+        return bboxes
+    min_h = min_height_frac * frame_height
+    keep = [b for b in bboxes if (b[3] - b[1]) >= min_h]
+    return np.array(keep) if keep else np.empty((0, 4))
+
+
 def slice_body_hands(keypoints, scores):
     """133kp wholebody -> body(0:17) + left_hand(91:112) + right_hand(112:133)
     = 59kp total, dropping face(23:91) and feet(17:23)."""
@@ -69,13 +84,13 @@ def draw_body_hands(img, keypoints, scores, kpt_thr=0.3):
     return img
 
 
-def run_probe(det, pose, pipeline, n_frames, label):
+def run_probe(det, pose, pipeline, n_frames, label, min_height_frac):
     times = []
     n_people = []
     for _ in range(n_frames):
         img = get_frame(pipeline)
         t0 = time.perf_counter()
-        bboxes = det(img)
+        bboxes = filter_small_boxes(det(img), img.shape[0], min_height_frac)
         keypoints, scores = pose(img, bboxes=bboxes)
         times.append(time.perf_counter() - t0)
         n_people.append(len(bboxes))
@@ -86,14 +101,23 @@ def run_probe(det, pose, pipeline, n_frames, label):
     return fps
 
 
-def run_record(det, pose, pipeline, record_seconds, out_video, label, kpt_thr):
+def run_record(det, pose, pipeline, record_seconds, out_video, label, kpt_thr,
+               min_height_frac, countdown=0):
+    for remaining in range(countdown, 0, -1):
+        print(f'Recording starts in {remaining}s -- get in frame...', flush=True)
+        t_tick = time.perf_counter()
+        # drain camera frames during the countdown so wait_for_frames()
+        # doesn't hand back a stale queued frame the instant recording starts
+        while time.perf_counter() - t_tick < 1.0:
+            get_frame(pipeline)
+
     annotated = []
     per_frame_s = []
     t_start = time.perf_counter()
     while time.perf_counter() - t_start < record_seconds:
         t0 = time.perf_counter()
         img = get_frame(pipeline)
-        bboxes = det(img)
+        bboxes = filter_small_boxes(det(img), img.shape[0], min_height_frac)
         keypoints, scores = pose(img, bboxes=bboxes)
         out = draw_body_hands(img.copy(), keypoints, scores, kpt_thr=kpt_thr)
         dt = time.perf_counter() - t0
@@ -129,6 +153,10 @@ def main():
     ap.add_argument('--record-seconds', type=float, default=15.0)
     ap.add_argument('--out-video', default=None)
     ap.add_argument('--kpt-thr', type=float, default=0.3)
+    ap.add_argument('--countdown', type=int, default=0)
+    ap.add_argument('--min-height-frac', type=float, default=0.2,
+                    help='drop detections shorter than this fraction of the '
+                         'frame height (filters small false positives)')
     args = ap.parse_args()
 
     label = f'openvino/{args.device}'
@@ -145,15 +173,15 @@ def main():
         # than steady-state and would otherwise skew both probe and record.
         for _ in range(5):
             img = get_frame(pipeline)
-            bboxes = det(img)
+            bboxes = filter_small_boxes(det(img), img.shape[0], args.min_height_frac)
             pose(img, bboxes=bboxes)
 
         if args.mode == 'probe':
-            run_probe(det, pose, pipeline, args.probe_frames, label)
+            run_probe(det, pose, pipeline, args.probe_frames, label, args.min_height_frac)
         else:
             assert args.out_video, '--out-video required for --mode record'
             run_record(det, pose, pipeline, args.record_seconds, args.out_video,
-                      label, args.kpt_thr)
+                      label, args.kpt_thr, args.min_height_frac, countdown=args.countdown)
     finally:
         pipeline.stop()
 
