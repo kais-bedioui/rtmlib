@@ -321,6 +321,14 @@ Given §12's DWPose-t result, this combination is **not recommended** as the pri
 
 **Bottom line: use `wholebody-dwpose-t` (YOLOX-tiny + DWPose-t, OpenVINO/CPU) for real-time CPU wholebody pose — 27.1 fps with full body+hands+feet+face output, no Body+Hand fallback needed.**
 
+### 12.2 What DWPose-t's 133 keypoints actually look like on this video
+
+The table above is FPS-only — no visual example of DWPose-t's actual output on `video_dataset_garcia_portugal` footage was committed alongside it. Generated one directly from the same video §12's table was benchmarked against (`GX017154_W001_1.MP4`, t=60s, `yolox-tiny` + `dwpose-t`, openvino/CPU): 3 people detected, 133 keypoints each, matching the table's `avg_persons=3.00` exactly.
+
+![DWPose-t wholebody output on GX017154_W001_1.MP4 at t=60s — 3 people, 133 keypoints each including face outline and both hands](benchmark/wholebody_demo/dwpose_gx017154_t60s.jpg)
+
+Face outline and per-finger hand keypoints are both visible on all three workers (the left-most figure has a raised hand with a scaled skeleton clearly resolved despite motion), confirming the 27.1 fps number in the table above isn't just a fast wrong answer — the full 133-point output is being produced, not silently degraded.
+
 ## 13. Live RealSense demo: real-time Body+Hand (59kp) on OpenVINO CPU vs. NPU
 
 §12 benchmarked wholebody on offline video at 1080p. This section repeats the same `yolox-tiny` + `dwpose-t` pipeline **live** off the RealSense D435I's color stream at **1280×720**, sliced down to a **body+hand-only 59-keypoint** output (§12.1's "curious about body+hands together" follow-up), and compares OpenVINO's CPU plugin against the on-chip NPU to pick the faster of the two "optimized CPU inference strategy" options the task called for. Script: `benchmark/realsense_record_wholebody.py`.
