@@ -176,7 +176,8 @@ Live-camera numbers track the offline-video numbers closely for every combo test
 
 ## 9. Future work
 
-- **Jetson**: the working GPU path is now identified — TensorRT directly (§11.1), not onnxruntime's CUDA EP (generic PyPI wheel lacks Orin's SM 8.7 kernels, §11). What's still open: a directly-comparable, end-to-end (not bare-engine) FPS number for `rtmo-balanced` on Jetson would need a small Python/TensorRT runner reusing rtmlib's pre/post-processing — the sibling `rfdetr-pose` project (§11.2) shows what that looks like in practice for a different model. Adding a `backend='tensorrt'` option to rtmlib itself remains a larger, unstarted piece of work. The other two candidates originally considered (crowd-density scaling, RF-DETR-Keypoints) remain explicitly descoped — see §8. (RF-DETR-Keypoints specifically: turns out it's already been evaluated independently on this same Jetson, standalone vs. two-stage — see §11.2 — so the "not needed for now" scoping call from §8 still stands, but the data exists if it becomes relevant later.)
+- **Jetson**: the working GPU path is now identified — TensorRT directly (§11.1), not onnxruntime's CUDA EP (generic PyPI wheel lacks Orin's SM 8.7 kernels, §11). What's still open: a directly-comparable, end-to-end (not bare-engine) FPS number for `rtmo-balanced` on Jetson would need a small Python/TensorRT runner reusing rtmlib's pre/post-processing — the sibling `rfdetr-pose` project (§11.2) shows what that looks like in practice for a different model. The other two candidates originally considered (crowd-density scaling, RF-DETR-Keypoints) remain explicitly descoped — see §8. (RF-DETR-Keypoints specifically: turns out it's already been evaluated independently on this same Jetson, standalone vs. two-stage — see §11.2 — so the "not needed for now" scoping call from §8 still stands, but the data exists if it becomes relevant later.)
+- **A `backend='tensorrt'` option for rtmlib — started, not merged.** A separate worktree in this same checkout (`worktree-rtmo-tensorrt`, local commit `d64774e`, not pushed/PR'd) adds `RTMOTensorRT` (`rtmlib/tools/pose_estimation/rtmo_tensorrt.py`): RTMO running directly on a TensorRT engine (subclasses `RTMO`, overrides only `inference()`, reuses all of RTMO's SimCC/NMS decode unchanged) plus an FP16 engine builder. Spot-checked on *this laptop's* RTX 500 Ada (not the Jetson) against `rtmo-m`/"balanced": exact person-count match against onnxruntime, correct skeleton overlay, **74.5 fps** full pipeline — beating this report's own onnxruntime/CUDA number for the same tier (§4: 48.9 fps) by ~1.5×, with FP16 (`build_engine(fp16=True)`) measured ~1.75× faster than FP32 on top of that. This was an informal validation pass (one manual run, not the 40-frame timed harness §3/§4 use), not yet merged into `benchmark/pipelines.py`/`run_bench.py`, so it isn't in §4's table — flagged here rather than silently left out, but treat the exact figures as a promising spot-check pending a proper harness run, not an equal-footing result.
 
 ## 10. Reproducing this benchmark
 
@@ -366,3 +367,27 @@ Sample frame (`benchmark/realsense_demo/sample_frame.jpg`):
 ![Live body+hands demo frame](benchmark/realsense_demo/sample_frame.jpg)
 
 **Bottom line: `yolox-tiny` + `dwpose-t` on OpenVINO/CPU, sliced to body+hands (59kp), runs live off the D435I at 1280×720 faster than the camera itself can feed it frames (33.4 fps model vs. 30 fps camera) — no NPU needed (2.7× slower for this pipeline size), and a minimum-bbox-height filter is recommended alongside `yolox-tiny` specifically to drop static high-confidence background false positives that score thresholding alone can't catch.**
+
+## 14. Does RTMO-lightweight (one-stage) miss people a real detector would catch?
+
+A follow-up question about §4/§7's one-stage recommendation: RTMO's flat per-frame cost (§7) comes from a single dense-prediction pass with embedded NMS — does that architecture *miss* people a dedicated detector wouldn't? Checked in a separate worktree (`worktree-rtmo-vs-yolo26x`, commit `faa2cfc`, full write-up: `RTMO_VS_YOLO26X.md`) by running `rtmo-lightweight` (openvino/CPU) and Ultralytics **YOLO26x** (a strong, independent reference detector, person class only) side by side on 290 frames sampled once/second across the full 5-minute `GX017154_W001_1.MP4` (1080p, greedy IoU≥0.3 matching, YOLO26x treated as pseudo-ground-truth).
+
+```
+756 total YOLO26x person detections, 697 matched by RTMO-lightweight, 59 missed
+0 unmatched RTMO detections (no observed false positives)
+Overall recall: 92.2%
+```
+
+| People in frame | Detections | Missed by RTMO | Recall |
+|---|--:|--:|--:|
+| 2 | 238 | 6 | **97.5%** |
+| 3 | 498 | 44 | **91.2%** |
+| 4 | 20 | 9 | **55.0%** |
+
+**The failure mode is occlusion/crowding, not distance or small size** — inspecting the worst frames shows RTMO's internal NMS suppresses people who are close together or partially occluded (by each other, or even by scaffolding) as apparent near-duplicates, not people who are far away or small in frame:
+
+![YOLO26x (red, 3 detections) vs. RTMO-lightweight (green, 1 detection) — one person behind scaffolding and one occluded person both missed](benchmark/recall_demo/worst_frame_0280s.jpg)
+
+*t=280s, the single worst-recall frame in the sample: YOLO26x finds 3 people (red), RTMO-lightweight finds 1 (green) — one missed person is partly screened by the metal scaffolding tower, the other is standing close behind/beside the detected person.*
+
+Zero false positives were observed in either direction across all 290 frames — every miss is under-detection under occlusion/crowding, never a spurious extra detection. **Practical read**: RTMO-lightweight is fine for use cases tolerant of occasionally missing one person in a cluster for a frame or two (activity recognition on the closest/most prominent person, general presence detection) — recall on genuinely separated people stays ≥97% — but risky for exhaustive headcounting or safety/compliance monitoring where every person must be accounted for, especially as scenes get denser (55% recall already at 4 people in this small sample). A two-stage pipeline (this report's own `balanced`/`performance` YOLOX tiers, or YOLO26x itself) trades RTMO's flat per-person cost (§7) for meaningfully better crowded-scene recall — a real trade-off, not a free lunch.
