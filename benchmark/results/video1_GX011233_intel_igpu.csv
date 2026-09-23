@@ -1,0 +1,8 @@
+tag,video,src_resolution,bench_resolution,src_fps,pipeline,backend,device,det_ms,pose_ms,total_ms,fps,avg_persons,status,error
+video1_intel_igpu,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,lightweight (YOLOX-tiny + RTMPose-s),openvino,gpu.0,11.28,15.72,27.00,37.04,1.00,ok,
+video1_intel_igpu,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,balanced (YOLOX-m + RTMPose-m),openvino,gpu.0,44.51,28.76,73.27,13.65,1.00,ok,
+video1_intel_igpu,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,performance (YOLOX-x + RTMPose-x),openvino,gpu.0,129.85,68.73,198.58,5.04,1.00,ok,
+video1_intel_igpu,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,rfdetr-balanced (RF-DETR-m + RTMPose-m),openvino,gpu.0,85.37,23.07,108.44,9.22,1.00,ok,
+video1_intel_igpu,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-lightweight (RTMO-s, one-stage)",openvino,gpu.0,0.00,107.70,107.70,9.28,1.00,ok,
+video1_intel_igpu,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-balanced (RTMO-m, one-stage)",openvino,gpu.0,0.00,94.26,94.26,10.61,1.00,ok,
+video1_intel_igpu,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-performance (RTMO-l, one-stage)",openvino,gpu.0,0.00,113.19,113.19,8.83,1.00,ok,

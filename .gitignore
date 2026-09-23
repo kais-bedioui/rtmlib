@@ -110,6 +110,7 @@ venv.bak/
 # custom
 *.onnx
 *.mp4
+!benchmark/realsense_demo/*.mp4
 
 # Pytorch
 *.pth

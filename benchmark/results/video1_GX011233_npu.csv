@@ -1,0 +1,19 @@
+tag,video,src_resolution,bench_resolution,src_fps,pipeline,backend,device,det_ms,pose_ms,total_ms,fps,avg_persons,status,error
+video1_npu,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,lightweight (YOLOX-tiny + RTMPose-s),openvino,npu,72.40,3.89,76.28,13.11,1.00,ok,
+video1_npu,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,balanced (YOLOX-m + RTMPose-m),openvino,npu,168.77,5.15,173.92,5.75,1.00,ok,
+video1_npu,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,performance (YOLOX-x + RTMPose-x),openvino,npu,,,,,,failed,"RuntimeError: Exception from src/inference/src/cpp/core.cpp:117:
+Exception from src/inference/src/dev/plugin.cpp:54:
+Exception from src/plugins/intel_npu/src/plugin/src/plugin.cpp:576:
+Exception from src/plugins/intel_npu/src/compiler_adapter/src/ze_graph_ext_wrappers.cpp:425:
+Compilation failed. Level0 pfnCreate2 result: ZE_RESULT_ERROR_INVALID_ARGUMENT, code 0x78000004 - generic error code for invalid arguments . [NPU_DRV] Driver reports a failure from vclAllocatedExecutableCreate2, return code: 2013265924
+[NPU_VCL] Compiler returned msg:
+Compilation failed
+
+
+
+
+"
+video1_npu,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,rfdetr-balanced (RF-DETR-m + RTMPose-m),openvino,npu,109.40,4.95,114.36,8.74,1.00,ok,
+video1_npu,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-lightweight (RTMO-s, one-stage)",openvino,npu,0.00,73.18,73.18,13.66,1.00,ok,
+video1_npu,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-balanced (RTMO-m, one-stage)",openvino,npu,0.00,85.21,85.21,11.74,1.00,ok,
+video1_npu,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-performance (RTMO-l, one-stage)",openvino,npu,0.00,104.78,104.78,9.54,1.00,ok,

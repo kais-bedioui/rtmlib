@@ -1,0 +1,56 @@
+tag,video,src_resolution,bench_resolution,src_fps,pipeline,backend,device,det_ms,pose_ms,total_ms,fps,avg_persons,status,error
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,lightweight (YOLOX-tiny + RTMPose-s),onnxruntime,cpu,68.44,21.88,90.33,11.07,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,lightweight (YOLOX-tiny + RTMPose-s),onnxruntime,cuda,6.80,2.54,9.34,107.12,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,lightweight (YOLOX-tiny + RTMPose-s),openvino,cpu,19.94,6.74,26.68,37.48,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,lightweight (YOLOX-tiny + RTMPose-s),openvino,gpu,46.23,8.82,55.05,18.17,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,balanced (YOLOX-m + RTMPose-m),onnxruntime,cpu,368.46,42.92,411.39,2.43,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,balanced (YOLOX-m + RTMPose-m),onnxruntime,cuda,26.53,4.03,30.56,32.72,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,balanced (YOLOX-m + RTMPose-m),openvino,cpu,126.57,18.27,144.85,6.90,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,balanced (YOLOX-m + RTMPose-m),openvino,gpu,358.12,16.87,374.99,2.67,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,performance (YOLOX-x + RTMPose-x),onnxruntime,cpu,871.89,190.33,1062.23,0.94,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,performance (YOLOX-x + RTMPose-x),onnxruntime,cuda,61.44,16.48,77.93,12.83,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,performance (YOLOX-x + RTMPose-x),openvino,cpu,468.66,113.80,582.46,1.72,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,performance (YOLOX-x + RTMPose-x),openvino,gpu,1346.55,132.92,1479.47,0.68,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,rfdetr-balanced (RF-DETR-m + RTMPose-m),onnxruntime,cpu,478.80,43.44,522.25,1.91,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,rfdetr-balanced (RF-DETR-m + RTMPose-m),onnxruntime,cuda,27.52,4.33,31.85,31.40,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,rfdetr-balanced (RF-DETR-m + RTMPose-m),openvino,cpu,192.35,16.86,209.21,4.78,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,rfdetr-balanced (RF-DETR-m + RTMPose-m),openvino,gpu,511.64,14.73,526.37,1.90,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-lightweight (RTMO-s, one-stage)",onnxruntime,cpu,0.00,89.27,89.27,11.20,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-lightweight (RTMO-s, one-stage)",onnxruntime,cuda,0.00,10.06,10.06,99.39,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-lightweight (RTMO-s, one-stage)",openvino,cpu,0.00,71.67,71.67,13.95,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-lightweight (RTMO-s, one-stage)",openvino,gpu,,,,,,failed,"RuntimeError: Exception from src/inference/src/cpp/core.cpp:117:
+Exception from src/inference/src/dev/plugin.cpp:54:
+Check 'false' failed at src/plugins/intel_gpu/src/plugin/program_builder.cpp:168:
+[GPU] ProgramBuilder build failed!
+Exception from src/plugins/intel_gpu/src/runtime/ocl/ocl_kernel_builder.hpp:73:
+[GPU] clBuildProgram, error code: -11 CL_BUILD_PROGRAM_FAILURE
+
+
+
+"
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-balanced (RTMO-m, one-stage)",onnxruntime,cpu,0.00,114.71,114.71,8.72,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-balanced (RTMO-m, one-stage)",onnxruntime,cuda,0.00,20.46,20.46,48.88,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-balanced (RTMO-m, one-stage)",openvino,cpu,0.00,169.22,169.22,5.91,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-balanced (RTMO-m, one-stage)",openvino,gpu,,,,,,failed,"RuntimeError: Exception from src/inference/src/cpp/core.cpp:117:
+Exception from src/inference/src/dev/plugin.cpp:54:
+Check 'false' failed at src/plugins/intel_gpu/src/plugin/program_builder.cpp:168:
+[GPU] ProgramBuilder build failed!
+Exception from src/plugins/intel_gpu/src/runtime/ocl/ocl_kernel_builder.hpp:73:
+[GPU] clBuildProgram, error code: -11 CL_BUILD_PROGRAM_FAILURE
+
+
+
+"
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-performance (RTMO-l, one-stage)",onnxruntime,cpu,0.00,223.40,223.40,4.48,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-performance (RTMO-l, one-stage)",onnxruntime,cuda,0.00,31.23,31.23,32.02,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-performance (RTMO-l, one-stage)",openvino,cpu,0.00,318.48,318.48,3.14,1.00,ok,
+video1_GX011233,GX011233_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-performance (RTMO-l, one-stage)",openvino,gpu,,,,,,failed,"RuntimeError: Exception from src/inference/src/cpp/core.cpp:117:
+Exception from src/inference/src/dev/plugin.cpp:54:
+Check 'false' failed at src/plugins/intel_gpu/src/plugin/program_builder.cpp:168:
+[GPU] ProgramBuilder build failed!
+Exception from src/plugins/intel_gpu/src/runtime/ocl/ocl_kernel_builder.hpp:73:
+[GPU] clBuildProgram, error code: -11 CL_BUILD_PROGRAM_FAILURE
+
+
+
+"

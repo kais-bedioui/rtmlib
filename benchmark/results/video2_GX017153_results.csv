@@ -1,0 +1,18 @@
+tag,video,src_resolution,bench_resolution,src_fps,pipeline,backend,device,det_ms,pose_ms,total_ms,fps,avg_persons,status,error
+video2_GX017153,GX017153_W001_0.MP4,3840x2160,1920x1080,29.97,balanced (YOLOX-m + RTMPose-m),onnxruntime,cpu,370.56,87.28,457.84,2.18,2.00,ok,
+video2_GX017153,GX017153_W001_0.MP4,3840x2160,1920x1080,29.97,balanced (YOLOX-m + RTMPose-m),onnxruntime,cuda,26.43,7.84,34.27,29.18,2.00,ok,
+video2_GX017153,GX017153_W001_0.MP4,3840x2160,1920x1080,29.97,balanced (YOLOX-m + RTMPose-m),openvino,cpu,107.84,30.38,138.22,7.23,2.00,ok,
+video2_GX017153,GX017153_W001_0.MP4,3840x2160,1920x1080,29.97,balanced (YOLOX-m + RTMPose-m),openvino,gpu,358.99,29.27,388.26,2.58,2.00,ok,
+video2_GX017153,GX017153_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-balanced (RTMO-m, one-stage)",onnxruntime,cpu,0.00,158.81,158.81,6.30,2.00,ok,
+video2_GX017153,GX017153_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-balanced (RTMO-m, one-stage)",onnxruntime,cuda,0.00,20.56,20.56,48.63,2.00,ok,
+video2_GX017153,GX017153_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-balanced (RTMO-m, one-stage)",openvino,cpu,0.00,185.10,185.10,5.40,2.00,ok,
+video2_GX017153,GX017153_W001_0.MP4,3840x2160,1920x1080,29.97,"rtmo-balanced (RTMO-m, one-stage)",openvino,gpu,,,,,,failed,"RuntimeError: Exception from src/inference/src/cpp/core.cpp:117:
+Exception from src/inference/src/dev/plugin.cpp:54:
+Check 'false' failed at src/plugins/intel_gpu/src/plugin/program_builder.cpp:168:
+[GPU] ProgramBuilder build failed!
+Exception from src/plugins/intel_gpu/src/runtime/ocl/ocl_kernel_builder.hpp:73:
+[GPU] clBuildProgram, error code: -11 CL_BUILD_PROGRAM_FAILURE
+
+
+
+"
