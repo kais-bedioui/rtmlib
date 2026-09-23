@@ -319,3 +319,42 @@ Given §12's DWPose-t result, this combination is **not recommended** as the pri
 - **A smarter version of this combo is possible but not benchmarked here**: crop the hand detector's search region around each body's own wrist keypoints (RTMO already outputs wrist position + confidence) instead of running `RTMDet` hand detection on the full frame independently. This would fix the identity-association problem for free (the crop *is* the association) and should also be faster (a small wrist-centered crop is cheaper to detect hands in than a full 1920×1080 frame) — but it's a real implementation task (crop/pad/offset logic mirroring `RTMPose`'s own top-down pattern), not a config change, and wasn't built or measured in this pass given §12's DWPose-t result removes the urgency.
 
 **Bottom line: use `wholebody-dwpose-t` (YOLOX-tiny + DWPose-t, OpenVINO/CPU) for real-time CPU wholebody pose — 27.1 fps with full body+hands+feet+face output, no Body+Hand fallback needed.**
+
+## 13. Live RealSense demo: real-time Body+Hand (59kp) on OpenVINO CPU vs. NPU
+
+§12 benchmarked wholebody on offline video at 1080p. This section repeats the same `yolox-tiny` + `dwpose-t` pipeline **live** off the RealSense D435I's color stream at **1280×720**, sliced down to a **body+hand-only 59-keypoint** output (§12.1's "curious about body+hands together" follow-up), and compares OpenVINO's CPU plugin against the on-chip NPU to pick the faster of the two "optimized CPU inference strategy" options the task called for. Script: `benchmark/realsense_record_wholebody.py`.
+
+**Methodology**: `pyrealsense2` pipeline at 1280×720/30fps, color sensor's `frames_queue_size` set to 1 (so a slow consumer never plays back stale buffered frames — always gets the newest one), 20-frame auto-exposure warmup + 5 more inference warmup frames (first-call graph compile/plugin init is much slower than steady state and would otherwise skew the numbers), then 30 timed live frames per backend.
+
+| Backend | FPS | Mean latency | Avg. people |
+|---|--:|--:|--:|
+| **openvino / CPU** | **33.4** | 29.9 ms | 1.63 |
+| openvino / NPU | 12.5 | 80.2 ms | 1.90 |
+
+**OpenVINO/CPU wins by 2.7×.** This matches the pattern already established in §6/§7 for the *lightweight* two-stage tier specifically (small YOLOX-tiny detector + a small pose head): the NPU's per-call dispatch/queueing overhead dominates at this model size, and it only pulls ahead of CPU on larger, more compute-bound tiers (§6). DWPose-t is architecturally the same `RTMPose` SimCC class as the Body-17 `rtmpose-s`/`-m` models benchmarked there — same conclusion, same reason, now confirmed live off the camera rather than on pre-recorded video.
+
+### 13.1 Body+Hand keypoint slice (59 of 133)
+
+DWPose-t's raw output is COCO-Wholebody's 133 keypoints (§7/§12: 0–16 body, 17–22 feet, 23–90 face, 91–111 left hand, 112–132 right hand — indices verified directly against `rtmlib/visualization/skeleton/coco133.py`, not assumed). Body+hands drops feet and face, keeping body + both hands:
+
+```python
+keypoints, scores = pose(img, bboxes=det(img))          # (N, 133, 2), (N, 133)
+body_kp,  body_sc  = keypoints[:, 0:17],   scores[:, 0:17]     # 17
+lhand_kp, lhand_sc = keypoints[:, 91:112], scores[:, 91:112]   # 21
+rhand_kp, rhand_sc = keypoints[:, 112:133], scores[:, 112:133] # 21
+# 17 + 21 + 21 = 59
+```
+
+`draw_skeleton()` auto-dispatches skeleton topology purely from `keypoints.shape[1]` (17→`coco17`, 21→`hand21`, 133→`coco133`) — a manually-sliced 59-point array has no matching entry, so the three segments are drawn with three separate layered calls onto the same frame (`coco17` for body, `hand21` twice for each hand) rather than one call on the concatenated array.
+
+### 13.2 Recorded demo video
+
+`benchmark/realsense_demo/realsense_bodyhands_openvino_cpu.mp4` (22 MB, 1280×720, 435 frames / 14.9s) — a genuine live capture-and-infer loop (not a replay of pre-recorded frames): each frame is grabbed from the camera, run through the full detector+pose+slice+overlay pipeline, and only *then* is the next frame grabbed, so playback speed is an honest measurement, not a fixed guess. Encoded at the **achieved** rate (29.1 fps) rather than a nominal one. Per-frame live FPS, backend, and detected person count are burned into the top-left corner of every frame.
+
+**29.1 fps achieved is camera-limited, not model-limited**: §13's isolated probe measured the OpenVINO/CPU pipeline itself at 33.4 fps, faster than the D435I's native 30 fps color stream — `wait_for_frames()` can't return frames faster than the camera produces them, so end-to-end the pipeline is waiting on the camera, not the other way around. In other words, this pipeline has FPS headroom to spare at 1280×720 on CPU alone.
+
+Sample frame (`benchmark/realsense_demo/sample_frame.jpg`):
+
+![Live body+hands demo frame](benchmark/realsense_demo/sample_frame.jpg)
+
+**Bottom line: `yolox-tiny` + `dwpose-t` on OpenVINO/CPU, sliced to body+hands (59kp), runs live off the D435I at 1280×720 faster than the camera itself can feed it frames (33.4 fps model vs. 30 fps camera) — no NPU needed, and the NPU is in fact 2.7× slower for this pipeline size.**
